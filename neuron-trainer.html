@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>No.</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #ffffff;
+      --text-primary: #111111;
+      --text-secondary: #555555;
+      --text-tertiary: #999999;
+      --border: rgba(0,0,0,0.15);
+      --border-hover: rgba(0,0,0,0.25);
+      --surface: #f5f5f5;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111111;
+        --text-primary: #f0f0f0;
+        --text-secondary: #aaaaaa;
+        --text-tertiary: #666666;
+        --border: rgba(255,255,255,0.12);
+        --border-hover: rgba(255,255,255,0.25);
+        --surface: #1e1e1e;
+      }
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    #countdown {
+      font-size: 13px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.08em;
+      text-align: center;
+      margin-bottom: 3rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.8;
+    }
+
+    #countdown span {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    #btn {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      border: 0.5px solid var(--border-hover);
+      background: transparent;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      font-family: inherit;
+      letter-spacing: 0.02em;
+    }
+
+    #btn:hover { background: var(--surface); }
+    #btn:active { transform: scale(0.96); }
+    #btn:disabled { opacity: 0.35; cursor: default; }
+
+    #count-display {
+      margin-top: 2rem;
+      font-size: 13px;
+      color: var(--text-tertiary);
+      min-height: 20px;
+    }
+
+    #count-display b {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    #status {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 0.5rem;
+      min-height: 16px;
+      letter-spacing: 0.04em;
+    }
+
+    #history-toggle {
+      margin-top: 4rem;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: inherit;
+      letter-spacing: 0.05em;
+    }
+
+    #history-toggle:hover { color: var(--text-secondary); }
+
+    #history-panel {
+      width: 100%;
+      max-width: 300px;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    #history-panel.open { display: block; }
+
+    #history-list {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      text-align: center;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .h-item {
+      border-bottom: 0.5px solid var(--border);
+      padding: 5px 0;
+      line-height: 1.6;
+    }
+
+    @keyframes pop {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+
+    .flash { animation: pop 0.25s ease; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <div id="countdown">—</div>
+  <button id="btn" disabled>No.</button>
+  <div id="count-display"></div>
+  <div id="status">connecting...</div>
+  <button id="history-toggle">history</button>
+  <div id="history-panel">
+    <div id="history-list"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, increment, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyAIceqMXYNY5EH_3vTmIbogjb6wJ2CCBxQ",
+    authDomain:        "speakup-27de0.firebaseapp.com",
+    projectId:         "speakup-27de0",
+    storageBucket:     "speakup-27de0.firebasestorage.app",
+    messagingSenderId: "811108429557",
+    appId:             "1:811108429557:web:1ad8de2151de43b8f8dfbc",
+    measurementId:     "G-BQ65T23S3M"
+  };
+
+  const firebaseApp = initializeApp(firebaseConfig);
+  const db          = getFirestore(firebaseApp);
+  const docRef      = doc(db, "trainer", "main");
+
+  const TARGET   = new Date("2031-03-14T00:00:00");
+  let histOpen   = false;
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function tick() {
+    const diff = TARGET - new Date();
+    if (diff <= 0) { document.getElementById("countdown").textContent = "training complete"; return; }
+    const yrs  = Math.floor(diff / 31557600000);
+    const days = Math.floor((diff % 31557600000) / 86400000);
+    const hrs  = Math.floor((diff % 86400000) / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    document.getElementById("countdown").innerHTML =
+      `<span>${yrs}</span> yr &nbsp;<span>${days}</span> d &nbsp;<span>${pad(hrs)}</span> h &nbsp;<span>${pad(mins)}</span> m &nbsp;<span>${pad(secs)}</span> s`;
+  }
+
+  function renderCount(count) {
+    const el = document.getElementById("count-display");
+    el.innerHTML = count ? `<b>${count}</b> time${count !== 1 ? "s" : ""}` : "";
+  }
+
+  function renderHistory(history) {
+    const list = document.getElementById("history-list");
+    if (!history || !history.length) {
+      list.innerHTML = `<div style="padding:8px 0">no entries yet</div>`;
+      return;
+    }
+    list.innerHTML = [...history].reverse().map(ts => {
+      const d = new Date(ts);
+      return `<div class="h-item">${d.toLocaleDateString()} &nbsp; ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>`;
+    }).join("");
+  }
+
+  async function init() {
+    try {
+      const snap = await getDoc(docRef);
+      if (!snap.exists()) await setDoc(docRef, { count: 0, history: [] });
+
+      document.getElementById("btn").disabled = false;
+      document.getElementById("status").textContent = "";
+
+      onSnapshot(docRef, s => {
+        if (!s.exists()) return;
+        const data = s.data();
+        renderCount(data.count || 0);
+        renderHistory(data.history || []);
+      });
+    } catch (e) {
+      document.getElementById("status").textContent = "connection failed";
+      console.error(e);
+    }
+  }
+
+  document.getElementById("btn").addEventListener("click", async () => {
+    const btn = document.getElementById("btn");
+    btn.disabled = true;
+    document.getElementById("status").textContent = "saving...";
+    try {
+      await updateDoc(docRef, { count: increment(1), history: arrayUnion(Date.now()) });
+      btn.classList.remove("flash");
+      void btn.offsetWidth;
+      btn.classList.add("flash");
+      document.getElementById("status").textContent = "";
+    } catch (e) {
+      document.getElementById("status").textContent = "save failed";
+      console.error(e);
+    }
+    btn.disabled = false;
+  });
+
+  document.getElementById("history-toggle").addEventListener("click", () => {
+    histOpen = !histOpen;
+    document.getElementById("history-panel").classList.toggle("open", histOpen);
+    document.getElementById("history-toggle").textContent = histOpen ? "hide" : "history";
+  });
+
+  tick();
+  setInterval(tick, 1000);
+  init();
+</script>
+
+</body>
+</html>
